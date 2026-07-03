@@ -118,6 +118,17 @@ function Booking() {
       return data ?? [];
     },
   });
+  const { data: blockedDaysData = [] } = useQuery({
+    queryKey: ["blocked-days", date],
+    queryFn: async () => {
+      const { data } = await supabase
+        .from("blocked_days")
+        .select("date")
+        .eq("date", date);
+      return data ?? [];
+    },
+  });
+  const isDayBlocked = (blockedDaysData as any[]).length > 0;
 
   const slots = useMemo(() => generateSlots(date), [date]);
 
@@ -266,22 +277,33 @@ function Booking() {
                   setSlotIdx(null);
                 }}
               />
-              <div className="mt-6 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
-                {slots.length === 0 && <div className="col-span-full text-sm text-muted-foreground">{dict.booking.noSlots[lang]}</div>}
-                {slots.map((s, i) => {
-                  const taken = barberId ? isSlotTaken(s, bookings, barberId) : false;
-                  return (
-                    <button
-                      key={i}
-                      disabled={taken}
-                      onClick={() => setSlotIdx(i)}
-                      className={`border p-2 text-sm ${slotIdx === i ? "border-primary bg-primary text-primary-foreground" : taken ? "border-border text-muted-foreground line-through opacity-50" : "border-border hover:border-foreground"}`}
-                    >
-                      {s.label}
-                    </button>
-                  );
-                })}
-              </div>
+              {isDayBlocked ? (
+                <div className="mt-6 rounded border border-rose-500/40 bg-rose-500/5 p-6 text-center">
+                  <p className="font-display text-lg text-rose-600">
+                    {lang === "ar" ? "❌ هذا اليوم مغلق ولا تتوفر حجوزات." : "❌ This day is closed. No bookings available."}
+                  </p>
+                  <p className="mt-2 text-sm text-muted-foreground">
+                    {lang === "ar" ? "يُرجى اختيار يوم آخر." : "Please select a different day."}
+                  </p>
+                </div>
+              ) : (
+                <div className="mt-6 grid grid-cols-3 gap-2 sm:grid-cols-5 md:grid-cols-6">
+                  {slots.length === 0 && <div className="col-span-full text-sm text-muted-foreground">{dict.booking.noSlots[lang]}</div>}
+                  {slots.map((s, i) => {
+                    const taken = barberId ? isSlotTaken(s, bookings, barberId) : false;
+                    return (
+                      <button
+                        key={i}
+                        disabled={taken}
+                        onClick={() => setSlotIdx(i)}
+                        className={`border p-2 text-sm ${slotIdx === i ? "border-primary bg-primary text-primary-foreground" : taken ? "border-border text-muted-foreground line-through opacity-50" : "border-border hover:border-foreground"}`}
+                      >
+                        {s.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
 
@@ -330,7 +352,7 @@ function Booking() {
           {step < 4 ? (
             <button
               onClick={() => setStep(step + 1)}
-              disabled={(step === 1 && !serviceId) || (step === 2 && !barberId) || (step === 3 && slotIdx === null)}
+              disabled={(step === 1 && !serviceId) || (step === 2 && !barberId) || (step === 3 && (slotIdx === null || isDayBlocked))}
               className="inline-flex items-center gap-1 bg-primary px-6 py-3 text-sm uppercase tracking-widest text-primary-foreground disabled:opacity-30"
             >
               {dict.booking.next[lang]} <ChevronRight className="h-4 w-4" />

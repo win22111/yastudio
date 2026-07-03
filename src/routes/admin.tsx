@@ -603,6 +603,69 @@ function ServicesTab() {
   );
 }
 
+/* ============================ BLOCK DAY STRIP ============================ */
+const BD_DAY_EN  = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+const BD_DAY_AR  = ["أحد","اثن","ثلا","أرب","خمي","جمع","سبت"];
+const BD_MON_EN  = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+const BD_MON_AR  = ["يناير","فبراير","مارس","أبريل","مايو","يونيو","يوليو","أغسطس","سبتمبر","أكتوبر","نوفمبر","ديسمبر"];
+
+function BlockDayStrip({
+  value, onChange, lang, blockedSet,
+}: {
+  value: string;
+  onChange: (iso: string) => void;
+  lang: string;
+  blockedSet: Set<string>;
+}) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const days = Array.from({ length: 30 }, (_, i) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + i);
+    return d;
+  });
+  const toISO = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+
+  return (
+    <div className="mt-4 -mx-1 overflow-x-auto px-1 pb-2">
+      <div className="flex gap-2">
+        {days.map((d) => {
+          const iso = toISO(d);
+          const active = iso === value;
+          const blocked = blockedSet.has(iso);
+          const dayName = (lang === "ar" ? BD_DAY_AR : BD_DAY_EN)[d.getDay()];
+          const monName = (lang === "ar" ? BD_MON_AR : BD_MON_EN)[d.getMonth()];
+          return (
+            <button
+              key={iso}
+              onClick={() => onChange(iso)}
+              title={blocked ? (lang === "ar" ? "هذا اليوم محجوز مسبقاً" : "Already blocked") : iso}
+              className={`
+                flex w-16 flex-none flex-col items-center gap-0.5 rounded-xl border px-2 py-3 transition-all
+                ${active
+                  ? "border-rose-500 bg-rose-600 text-white shadow-md"
+                  : blocked
+                  ? "border-rose-300/50 bg-rose-500/10 text-rose-400 line-through opacity-60"
+                  : "border-border bg-background hover:border-foreground hover:bg-card"
+                }
+              `}
+            >
+              <span className={`text-[10px] uppercase tracking-wider font-medium ${active ? "opacity-90" : "text-muted-foreground"}`}>
+                {dayName}
+              </span>
+              <span className="font-display text-xl leading-none">{d.getDate()}</span>
+              <span className={`text-[9px] uppercase tracking-wider ${active ? "opacity-80" : "text-muted-foreground"}`}>
+                {monName}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 /* ============================ BOOKINGS ============================ */
 const BOOKING_STATUSES = ["pending", "confirmed", "paid", "cancelled", "no_show"] as const;
 function BookingsTab() {
@@ -611,9 +674,17 @@ function BookingsTab() {
   const [filter, setFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<any | null>(null);
+  const [blockPickDay, setBlockPickDay] = useState<string>("");
+  const [blocking, setBlocking] = useState(false);
+  const [lastBlocked, setLastBlocked] = useState<string | null>(null);
+  const undoTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-bookings"],
     queryFn: async () => (await sb.from("bookings").select("*, customers(*), barbers(*), services(*)").order("starts_at", { ascending: false }).limit(200)).data ?? [],
+  });
+  const { data: blockedDays = [], refetch: refetchBlocked } = useQuery({
+    queryKey: ["admin-blocked-days"],
+    queryFn: async () => (await sb.from("blocked_days").select("*").order("date", { ascending: true })).data ?? [],
   });
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data.length };
@@ -684,6 +755,45 @@ function BookingsTab() {
     setEditing(null);
     refetch();
   };
+  const blockDay = async () => {
+    if (!blockPickDay) return;
+    // Guard: ensure no active bookings exist for that day
+    const activeOnDay = (data as any[]).filter((b) => {
+      const iso = (b.starts_at ?? "").slice(0, 10);
+      if (iso !== blockPickDay) return false;
+      return b.status !== "cancelled" && b.status !== "no_show";
+    });
+    if (activeOnDay.length > 0) {
+      toast.error(
+        lang === "ar"
+          ? `لا يمكن إغلاق هذا اليوم — يوجد ${activeOnDay.length} حجز نشط. يرجى إلغاء جميع الحجوزات أولاً.`
+          : `Cannot block this day — ${activeOnDay.length} active booking(s) exist. Please cancel them first.`
+      );
+      return;
+    }
+    setBlocking(true);
+    const { error } = await sb.from("blocked_days").upsert({ date: blockPickDay }, { onConflict: "date" });
+    setBlocking(false);
+    if (error) return toast.error(error.message);
+    toast.success(lang === "ar" ? `تم إغلاق يوم ${blockPickDay}` : `Day ${blockPickDay} blocked`);
+    setLastBlocked(blockPickDay);
+    setBlockPickDay("");
+    refetchBlocked();
+    // Auto-clear undo after 8 s
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    undoTimerRef.current = setTimeout(() => setLastBlocked(null), 180_000); // 3 minutes
+  };
+  const unblockDay = async (date: string) => {
+    await sb.from("blocked_days").delete().eq("date", date);
+    toast.success(lang === "ar" ? `تم إعادة فتح يوم ${date}` : `Day ${date} unblocked`);
+    if (date === lastBlocked) setLastBlocked(null);
+    refetchBlocked();
+  };
+  const undoLastBlock = async () => {
+    if (!lastBlocked) return;
+    await unblockDay(lastBlocked);
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
   const labels: Record<string, { en: string; ar: string }> = {
     all: { en: "All", ar: "الكل" },
     pending: { en: "Pending", ar: "قيد الانتظار" },
@@ -694,6 +804,63 @@ function BookingsTab() {
   };
   return (
     <div>
+      {/* ── Block Day Panel ── */}
+      <div className="mb-6 rounded border border-rose-500/40 bg-rose-500/5 p-4">
+        <div className="flex items-center justify-between">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white">{blockedDays.length}</span>
+          <h3 className="font-display text-xl uppercase tracking-wider">
+            {lang === "ar" ? "إغلاق يوم (بدون حجوزات)" : "Block a Day"}
+          </h3>
+        </div>
+        <p className="mt-1 text-end text-xs text-muted-foreground">
+          {lang === "ar"
+            ? "اختر يومًا لا توجد فيه حجوزات نشطة لإغلاقه أمام العملاء."
+            : "Pick a day with no active bookings to make it unavailable to customers."}
+        </p>
+
+        {/* Custom day-strip — same style as booking page */}
+        <BlockDayStrip value={blockPickDay} onChange={setBlockPickDay} lang={lang} blockedSet={new Set((blockedDays as any[]).map((d: any) => d.date))} />
+
+        {/* Action row */}
+        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
+          {/* Undo button — visible for 8 s after last block */}
+          {lastBlocked && (
+            <button
+              onClick={undoLastBlock}
+              className="inline-flex items-center gap-2 border border-border bg-background px-4 py-2 text-xs uppercase tracking-widest hover:bg-card"
+            >
+              ↩ {lang === "ar" ? `تراجع (${lastBlocked})` : `Undo (${lastBlocked})`}
+            </button>
+          )}
+          <button
+            disabled={blocking || !blockPickDay}
+            onClick={blockDay}
+            className="inline-flex items-center gap-2 bg-rose-600 px-4 py-2 text-xs uppercase tracking-widest text-white disabled:opacity-40 hover:bg-rose-700"
+          >
+            {blocking ? (lang === "ar" ? "جارٍ الإغلاق…" : "Blocking…") : (lang === "ar" ? "إغلاق اليوم" : "Block Day")}
+          </button>
+        </div>
+
+        {blockedDays.length > 0 && (
+          <div className="mt-4 space-y-2">
+            <div className="text-end text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+              {lang === "ar" ? "الأيام المغلقة" : "Blocked Days"}
+            </div>
+            {(blockedDays as any[]).map((bd) => (
+              <div key={bd.date} className="flex items-center justify-between rounded border border-rose-500/30 bg-background px-3 py-2">
+                <button
+                  onClick={() => unblockDay(bd.date)}
+                  className="text-xs uppercase tracking-widest text-rose-600 hover:text-rose-800"
+                >
+                  {lang === "ar" ? "إلغاء الإغلاق" : "Unblock"}
+                </button>
+                <span className="font-mono text-sm">{bd.date}{bd.reason ? ` — ${bd.reason}` : ""}</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Today's bookings */}
       <div className="mb-6 rounded border border-primary/40 bg-card/40 p-4">
         <div className="flex items-center justify-between">
