@@ -792,7 +792,8 @@ function BookingsTab() {
     undoTimerRef.current = setTimeout(() => setLastBlocked(null), 180_000); // 3 minutes
   };
   const unblockDay = async (id: string, date: string) => {
-    await sb.from("blocked_days").delete().eq("id", id);
+    const { error } = await sb.from("blocked_days").delete().eq("id", id);
+    if (error) return toast.error(error.message);
     toast.success(lang === "ar" ? `تم إعادة فتح يوم ${date}` : `Day ${date} unblocked`);
     if (date === lastBlocked) setLastBlocked(null);
     refetchBlocked();
@@ -942,7 +943,7 @@ function BookingsTab() {
                 ? (lang === "ar" ? bd.barbers.name_ar : bd.barbers.name_en)
                 : null;
               return (
-                <div key={bd.id ?? bd.date} className="flex items-center justify-between rounded border border-rose-500/30 bg-background px-3 py-2">
+                <div key={bd.id} className="flex items-center justify-between rounded border border-rose-500/30 bg-background px-3 py-2">
                   <button
                     onClick={() => unblockDay(bd.id, bd.date)}
                     className="text-xs uppercase tracking-widest text-rose-600 hover:text-rose-800"
