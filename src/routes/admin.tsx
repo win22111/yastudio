@@ -677,6 +677,10 @@ function BookingsTab() {
   const [blockPickDay, setBlockPickDay] = useState<string>("");
   const [blocking, setBlocking] = useState(false);
   const [lastBlocked, setLastBlocked] = useState<string | null>(null);
+  // Barber-specific block state
+  const [barberBlockPickDay, setBarberBlockPickDay] = useState<string>("");
+  const [barberBlockPickBarber, setBarberBlockPickBarber] = useState<string>("");
+  const [barberBlocking, setBarberBlocking] = useState(false);
   const undoTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-bookings"],
@@ -684,7 +688,11 @@ function BookingsTab() {
   });
   const { data: blockedDays = [], refetch: refetchBlocked } = useQuery({
     queryKey: ["admin-blocked-days"],
-    queryFn: async () => (await sb.from("blocked_days").select("*").order("date", { ascending: true })).data ?? [],
+    queryFn: async () => (await sb.from("blocked_days").select("*, barbers(name_en, name_ar)").order("date", { ascending: true })).data ?? [],
+  });
+  const { data: allBarbers = [] } = useQuery({
+    queryKey: ["admin-all-barbers"],
+    queryFn: async () => (await sb.from("barbers").select("id, name_en, name_ar").eq("active", true).order("sort_order")).data ?? [],
   });
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data.length };
@@ -772,7 +780,7 @@ function BookingsTab() {
       return;
     }
     setBlocking(true);
-    const { error } = await sb.from("blocked_days").upsert({ date: blockPickDay }, { onConflict: "date" });
+    const { error } = await sb.from("blocked_days").upsert({ date: blockPickDay, barber_id: null }, { onConflict: "date,barber_id" });
     setBlocking(false);
     if (error) return toast.error(error.message);
     toast.success(lang === "ar" ? `تم إغلاق يوم ${blockPickDay}` : `Day ${blockPickDay} blocked`);
@@ -783,16 +791,46 @@ function BookingsTab() {
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
     undoTimerRef.current = setTimeout(() => setLastBlocked(null), 180_000); // 3 minutes
   };
-  const unblockDay = async (date: string) => {
-    await sb.from("blocked_days").delete().eq("date", date);
+  const unblockDay = async (id: string, date: string) => {
+    await sb.from("blocked_days").delete().eq("id", id);
     toast.success(lang === "ar" ? `تم إعادة فتح يوم ${date}` : `Day ${date} unblocked`);
     if (date === lastBlocked) setLastBlocked(null);
     refetchBlocked();
   };
   const undoLastBlock = async () => {
     if (!lastBlocked) return;
-    await unblockDay(lastBlocked);
+    const bd = (blockedDays as any[]).find((b) => b.date === lastBlocked && !b.barber_id);
+    if (bd) await unblockDay(bd.id, lastBlocked);
     if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+  };
+  const blockBarberDay = async () => {
+    if (!barberBlockPickDay || !barberBlockPickBarber) return;
+    // Guard: no active bookings for this barber on this day
+    const activeOnDay = (data as any[]).filter((b) => {
+      const iso = (b.starts_at ?? "").slice(0, 10);
+      return iso === barberBlockPickDay && b.barber_id === barberBlockPickBarber &&
+        b.status !== "cancelled" && b.status !== "no_show";
+    });
+    if (activeOnDay.length > 0) {
+      toast.error(
+        lang === "ar"
+          ? `لا يمكن إغلاق هذا اليوم للحلاق — يوجد ${activeOnDay.length} حجز نشط. يرجى إلغاؤها أولاً.`
+          : `Cannot block — ${activeOnDay.length} active booking(s) for this barber. Cancel them first.`
+      );
+      return;
+    }
+    setBarberBlocking(true);
+    const { error } = await sb.from("blocked_days").upsert(
+      { date: barberBlockPickDay, barber_id: barberBlockPickBarber },
+      { onConflict: "date,barber_id" }
+    );
+    setBarberBlocking(false);
+    if (error) return toast.error(error.message);
+    const barberName = (allBarbers as any[]).find((b) => b.id === barberBlockPickBarber)?.[lang === "ar" ? "name_ar" : "name_en"] ?? "";
+    toast.success(lang === "ar" ? `تم إغلاق يوم ${barberBlockPickDay} للحلاق ${barberName}` : `${barberBlockPickDay} blocked for ${barberName}`);
+    setBarberBlockPickDay("");
+    setBarberBlockPickBarber("");
+    refetchBlocked();
   };
   const labels: Record<string, { en: string; ar: string }> = {
     all: { en: "All", ar: "الكل" },
@@ -809,7 +847,7 @@ function BookingsTab() {
         <div className="flex items-center justify-between">
           <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white">{blockedDays.length}</span>
           <h3 className="font-display text-xl uppercase tracking-wider">
-            {lang === "ar" ? "إغلاق يوم (بدون حجوزات)" : "Block a Day"}
+            {lang === "ar" ? "إغلاق يوم" : "Block a Day"}
           </h3>
         </div>
         <p className="mt-1 text-end text-xs text-muted-foreground">
@@ -818,45 +856,115 @@ function BookingsTab() {
             : "Pick a day with no active bookings to make it unavailable to customers."}
         </p>
 
-        {/* Custom day-strip — same style as booking page */}
-        <BlockDayStrip value={blockPickDay} onChange={setBlockPickDay} lang={lang} blockedSet={new Set((blockedDays as any[]).map((d: any) => d.date))} />
-
-        {/* Action row */}
-        <div className="mt-4 flex flex-wrap items-center justify-end gap-3">
-          {/* Undo button — visible for 8 s after last block */}
-          {lastBlocked && (
+        {/* ── Section 1: Block full shop day ── */}
+        <div className="mt-4 rounded border border-rose-500/20 bg-background/60 p-3">
+          <div className="text-end text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {lang === "ar" ? "إغلاق يوم كامل (جميع الحلاقين)" : "Block Full Day (All Barbers)"}
+          </div>
+          <BlockDayStrip
+            value={blockPickDay}
+            onChange={setBlockPickDay}
+            lang={lang}
+            blockedSet={new Set((blockedDays as any[]).filter((d: any) => !d.barber_id).map((d: any) => d.date))}
+          />
+          <div className="mt-3 flex flex-wrap items-center justify-end gap-3">
+            {lastBlocked && (
+              <button
+                onClick={undoLastBlock}
+                className="inline-flex items-center gap-2 border border-border bg-background px-4 py-2 text-xs uppercase tracking-widest hover:bg-card"
+              >
+                ↩ {lang === "ar" ? `تراجع (${lastBlocked})` : `Undo (${lastBlocked})`}
+              </button>
+            )}
             <button
-              onClick={undoLastBlock}
-              className="inline-flex items-center gap-2 border border-border bg-background px-4 py-2 text-xs uppercase tracking-widest hover:bg-card"
+              disabled={blocking || !blockPickDay}
+              onClick={blockDay}
+              className="inline-flex items-center gap-2 bg-rose-600 px-4 py-2 text-xs uppercase tracking-widest text-white disabled:opacity-40 hover:bg-rose-700"
             >
-              ↩ {lang === "ar" ? `تراجع (${lastBlocked})` : `Undo (${lastBlocked})`}
+              {blocking ? (lang === "ar" ? "جارٍ الإغلاق…" : "Blocking…") : (lang === "ar" ? "إغلاق اليوم" : "Block Day")}
             </button>
-          )}
-          <button
-            disabled={blocking || !blockPickDay}
-            onClick={blockDay}
-            className="inline-flex items-center gap-2 bg-rose-600 px-4 py-2 text-xs uppercase tracking-widest text-white disabled:opacity-40 hover:bg-rose-700"
-          >
-            {blocking ? (lang === "ar" ? "جارٍ الإغلاق…" : "Blocking…") : (lang === "ar" ? "إغلاق اليوم" : "Block Day")}
-          </button>
+          </div>
         </div>
 
+        {/* ── Section 2: Block a specific barber for a day ── */}
+        <div className="mt-3 rounded border border-rose-500/20 bg-background/60 p-3">
+          <div className="text-end text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+            {lang === "ar" ? "إغلاق يوم لحلاق محدد" : "Block a Day for Specific Barber"}
+          </div>
+          {/* Barber selector */}
+          <div className="mt-3 flex justify-end">
+            <select
+              value={barberBlockPickBarber}
+              onChange={(e) => setBarberBlockPickBarber(e.target.value)}
+              className="w-full max-w-xs border border-border bg-background px-3 py-2 text-sm text-end"
+            >
+              <option value="">{lang === "ar" ? "— اختر الحلاق —" : "— Select barber —"}</option>
+              {(allBarbers as any[]).map((b: any) => (
+                <option key={b.id} value={b.id}>
+                  {lang === "ar" ? b.name_ar : b.name_en}
+                </option>
+              ))}
+            </select>
+          </div>
+          {barberBlockPickBarber && (
+            <>
+              <BlockDayStrip
+                value={barberBlockPickDay}
+                onChange={setBarberBlockPickDay}
+                lang={lang}
+                blockedSet={new Set(
+                  (blockedDays as any[]).filter((d: any) => d.barber_id === barberBlockPickBarber).map((d: any) => d.date)
+                )}
+              />
+              <div className="mt-3 flex justify-end">
+                <button
+                  disabled={barberBlocking || !barberBlockPickDay}
+                  onClick={blockBarberDay}
+                  className="inline-flex items-center gap-2 bg-rose-600 px-4 py-2 text-xs uppercase tracking-widest text-white disabled:opacity-40 hover:bg-rose-700"
+                >
+                  {barberBlocking
+                    ? (lang === "ar" ? "جارٍ الإغلاق…" : "Blocking…")
+                    : (lang === "ar" ? "إغلاق يوم الحلاق" : "Block Barber Day")}
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+
+        {/* ── Blocked days list ── */}
         {blockedDays.length > 0 && (
           <div className="mt-4 space-y-2">
             <div className="text-end text-xs font-semibold uppercase tracking-widest text-muted-foreground">
               {lang === "ar" ? "الأيام المغلقة" : "Blocked Days"}
             </div>
-            {(blockedDays as any[]).map((bd) => (
-              <div key={bd.date} className="flex items-center justify-between rounded border border-rose-500/30 bg-background px-3 py-2">
-                <button
-                  onClick={() => unblockDay(bd.date)}
-                  className="text-xs uppercase tracking-widest text-rose-600 hover:text-rose-800"
-                >
-                  {lang === "ar" ? "إلغاء الإغلاق" : "Unblock"}
-                </button>
-                <span className="font-mono text-sm">{bd.date}{bd.reason ? ` — ${bd.reason}` : ""}</span>
-              </div>
-            ))}
+            {(blockedDays as any[]).map((bd) => {
+              const barberName = bd.barbers
+                ? (lang === "ar" ? bd.barbers.name_ar : bd.barbers.name_en)
+                : null;
+              return (
+                <div key={bd.id ?? bd.date} className="flex items-center justify-between rounded border border-rose-500/30 bg-background px-3 py-2">
+                  <button
+                    onClick={() => unblockDay(bd.id, bd.date)}
+                    className="text-xs uppercase tracking-widest text-rose-600 hover:text-rose-800"
+                  >
+                    {lang === "ar" ? "إلغاء الإغلاق" : "Unblock"}
+                  </button>
+                  <div className="text-end">
+                    <span className="font-mono text-sm">{bd.date}</span>
+                    {barberName && (
+                      <span className="ml-2 rounded bg-rose-500/10 px-2 py-0.5 text-xs text-rose-600">
+                        {barberName}
+                      </span>
+                    )}
+                    {!barberName && (
+                      <span className="ml-2 rounded bg-rose-500/10 px-2 py-0.5 text-xs text-rose-600">
+                        {lang === "ar" ? "الكل" : "All barbers"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

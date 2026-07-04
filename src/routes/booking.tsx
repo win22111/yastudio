@@ -119,16 +119,30 @@ function Booking() {
     },
   });
   const { data: blockedDaysData = [] } = useQuery({
-    queryKey: ["blocked-days", date],
+    queryKey: ["blocked-days", date, barberId],
     queryFn: async () => {
-      const { data } = await supabase
-        .from("blocked_days")
-        .select("date")
-        .eq("date", date);
+      // Fetch any blocked_days rows matching this date, either full-shop (barber_id IS NULL) or this barber
+      let q = supabase.from("blocked_days").select("date, barber_id").eq("date", date);
+      if (barberId) {
+        q = supabase
+          .from("blocked_days")
+          .select("date, barber_id")
+          .eq("date", date)
+          .or(`barber_id.is.null,barber_id.eq.${barberId}`);
+      } else {
+        q = supabase.from("blocked_days").select("date, barber_id").eq("date", date).is("barber_id", null);
+      }
+      const { data } = await q;
       return data ?? [];
     },
   });
-  const isDayBlocked = (blockedDaysData as any[]).length > 0;
+  // Full-shop block (no barber_id) disables all slots
+  const isShopDayBlocked = (blockedDaysData as any[]).some((d: any) => !d.barber_id);
+  // Barber-specific block — only relevant after barber is chosen
+  const isBarberDayBlocked = barberId
+    ? (blockedDaysData as any[]).some((d: any) => d.barber_id === barberId)
+    : false;
+  const isDayBlocked = isShopDayBlocked || isBarberDayBlocked;
 
   const slots = useMemo(() => generateSlots(date), [date]);
 
@@ -280,10 +294,14 @@ function Booking() {
               {isDayBlocked ? (
                 <div className="mt-6 rounded border border-rose-500/40 bg-rose-500/5 p-6 text-center">
                   <p className="font-display text-lg text-rose-600">
-                    {lang === "ar" ? "❌ هذا اليوم مغلق ولا تتوفر حجوزات." : "❌ This day is closed. No bookings available."}
+                    {isBarberDayBlocked && !isShopDayBlocked
+                      ? (lang === "ar" ? "❌ هذا الحلاق غير متوفر في هذا اليوم." : "❌ This barber is unavailable on this day.")
+                      : (lang === "ar" ? "❌ هذا اليوم مغلق ولا تتوفر حجوزات." : "❌ This day is closed. No bookings available.")}
                   </p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {lang === "ar" ? "يُرجى اختيار يوم آخر." : "Please select a different day."}
+                    {isBarberDayBlocked && !isShopDayBlocked
+                      ? (lang === "ar" ? "يُرجى اختيار يوم آخر أو اختيار حلاق مختلف." : "Please select a different day or choose another barber.")
+                      : (lang === "ar" ? "يُرجى اختيار يوم آخر." : "Please select a different day.")}
                   </p>
                 </div>
               ) : (
