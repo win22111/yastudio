@@ -7,7 +7,21 @@ import { supabase } from './client'
 export const attachSupabaseAuth = createMiddleware({ type: 'function' }).client(
   async ({ next }) => {
     const { data } = await supabase.auth.getSession()
-    const token = data.session?.access_token
+    let token = data.session?.access_token
+
+    if (data.session && data.session.expires_at) {
+      const expiresAt = data.session.expires_at * 1000 // to ms
+      const buffer = 60 * 1000 // 1 minute buffer
+      if (Date.now() + buffer >= expiresAt) {
+        try {
+          const { data: refreshData } = await supabase.auth.refreshSession()
+          token = refreshData.session?.access_token
+        } catch (err) {
+          console.error('[attachSupabaseAuth] Failed to refresh session:', err)
+        }
+      }
+    }
+
     return next({
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })

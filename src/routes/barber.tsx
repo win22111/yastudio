@@ -229,6 +229,7 @@ function addStoredEnded(id: string) {
 function BarberDashboard({ user }: { user: User }) {
   const [endedSession, setEndedSession] = useState<any | null>(null);
   const [doneSessions, setDoneSessions] = useState<Set<string>>(() => getStoredEnded());
+  const [submittingDone, setSubmittingDone] = useState(false);
   const { lang } = useI18n();
   const qc = useQueryClient();
   const fetchDay = useServerFn(getMyBarberDay);
@@ -409,19 +410,42 @@ function BarberDashboard({ user }: { user: User }) {
         <EndSessionModal
           booking={endedSession}
           lang={lang}
-          onClose={() => {
-            // Cosmetic only — localStorage persistence, admin controls DB earnings
-            addStoredEnded(endedSession.id);
-            setDoneSessions((prev) => new Set([...prev, endedSession.id]));
-            setEndedSession(null);
+          submitting={submittingDone}
+          onConfirm={async () => {
+            setSubmittingDone(true);
+            try {
+              const { error } = await (supabase as any).rpc("mark_booking_paid", {
+                _booking_id: endedSession.id,
+              });
+              if (error) throw error;
+              // Mark locally so the badge shows immediately without a refetch
+              addStoredEnded(endedSession.id);
+              setDoneSessions((prev) => new Set([...prev, endedSession.id]));
+              setEndedSession(null);
+              // Refresh the barber day data so the list updates
+              qc.invalidateQueries({ queryKey: ["my-barber-day", user.id] });
+            } catch (e: any) {
+              toast.error(e.message ?? (lang === "ar" ? "حدث خطأ أثناء الحفظ" : "Failed to save"));
+            } finally {
+              setSubmittingDone(false);
+            }
           }}
+          onClose={() => setEndedSession(null)}
         />
       )}
     </div>
   );
 }
 
-function EndSessionModal({ booking, lang, onClose }: { booking: any; lang: string; onClose: () => void }) {
+function EndSessionModal({
+  booking, lang, submitting, onConfirm, onClose,
+}: {
+  booking: any;
+  lang: string;
+  submitting: boolean;
+  onConfirm: () => Promise<void>;
+  onClose: () => void;
+}) {
   const customerName = booking.customers?.name ?? (lang === "ar" ? "العميل" : "Customer");
   const svc = lang === "ar" ? booking.services?.name_ar : booking.services?.name_en;
   const price = booking.price_iqd ?? 0;
@@ -476,12 +500,22 @@ function EndSessionModal({ booking, lang, onClose }: { booking: any; lang: strin
           </div>
         </div>
 
-        {/* Dismiss */}
+        {/* Confirm / Dismiss */}
+        <button
+          onClick={onConfirm}
+          disabled={submitting}
+          className="mt-6 w-full rounded-full bg-primary py-3 text-sm font-semibold uppercase tracking-widest text-primary-foreground hover:bg-primary/90 active:scale-95 transition-transform disabled:opacity-50"
+        >
+          {submitting
+            ? (lang === "ar" ? "جارٍ الحفظ…" : "Saving…")
+            : (lang === "ar" ? "تأكيد وإنهاء ✓" : "Confirm & Done ✓")}
+        </button>
         <button
           onClick={onClose}
-          className="mt-6 w-full rounded-full bg-primary py-3 text-sm font-semibold uppercase tracking-widest text-primary-foreground hover:bg-primary/90 active:scale-95 transition-transform"
+          disabled={submitting}
+          className="mt-2 w-full py-2 text-xs uppercase tracking-widest text-muted-foreground hover:text-foreground disabled:opacity-30"
         >
-          {lang === "ar" ? "حسنًا ✓" : "Got it ✓"}
+          {lang === "ar" ? "إلغاء" : "Cancel"}
         </button>
       </div>
     </div>

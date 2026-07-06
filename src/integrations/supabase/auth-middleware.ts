@@ -59,6 +59,7 @@ export const requireSupabaseAuth = createMiddleware({ type: 'function' }).server
     // Verify the token with Supabase auth
     const { data: { user }, error } = await supabase.auth.getUser(token);
     if (error || !user?.id) {
+      console.error('[Supabase Auth Middleware] getUser error:', error);
       throw new Error('Unauthorized: invalid or expired token');
     }
 

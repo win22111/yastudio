@@ -21,8 +21,8 @@ export const SITE = {
   instagramUrl: "https://www.instagram.com/yastudio.iq/", // e.g. 
   tiktokUrl: "https://www.tiktok.com/@yastoudio?_r=1&_t=ZS-97WA9AKr7xJ",    // e.g. "https://www.tiktok.com/@yastudio.iq"
   mapsUrl: "https://maps.app.goo.gl/udw5XDuu2J9XkTbM6?g_st=ic",      // e.g. "https://maps.app.goo.gl/your-link" (copy from Google Maps → Share)
-  openingHourLocal: 10, // 10:00
-  closingHourLocal: 22, // 22:00
+  openingHourLocal: 12, // 12:00 (noon)
+  closingHourLocal: 23, // 23:00 — last slot starts at 22:00 (10 PM)
   slotMinutes: 60,
 };
 

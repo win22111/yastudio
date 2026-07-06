@@ -121,16 +121,18 @@ function Booking() {
   const { data: blockedDaysData = [] } = useQuery({
     queryKey: ["blocked-days", date, barberId],
     queryFn: async () => {
+      // Cast to any — blocked_days exists in DB but the generated types file is outdated
+      const db = supabase as any;
       // Fetch any blocked_days rows matching this date, either full-shop (barber_id IS NULL) or this barber
-      let q = supabase.from("blocked_days").select("date, barber_id").eq("date", date);
+      let q = db.from("blocked_days").select("date, barber_id").eq("date", date);
       if (barberId) {
-        q = supabase
+        q = db
           .from("blocked_days")
           .select("date, barber_id")
           .eq("date", date)
           .or(`barber_id.is.null,barber_id.eq.${barberId}`);
       } else {
-        q = supabase.from("blocked_days").select("date, barber_id").eq("date", date).is("barber_id", null);
+        q = db.from("blocked_days").select("date, barber_id").eq("date", date).is("barber_id", null);
       }
       const { data } = await q;
       return data ?? [];
