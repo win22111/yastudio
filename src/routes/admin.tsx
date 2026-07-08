@@ -672,6 +672,7 @@ function BookingsTab() {
   const { lang } = useI18n();
   const qc = useQueryClient();
   const [filter, setFilter] = useState<string>("all");
+  const [barberFilter, setBarberFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
   const [editing, setEditing] = useState<any | null>(null);
   const [blockPickDay, setBlockPickDay] = useState<string>("");
@@ -694,11 +695,15 @@ function BookingsTab() {
     queryKey: ["admin-all-barbers"],
     queryFn: async () => (await sb.from("barbers").select("id, name_en, name_ar").eq("active", true).order("sort_order")).data ?? [],
   });
+  const barberFiltered = useMemo(
+    () => barberFilter === "all" ? (data as any[]) : (data as any[]).filter((b) => b.barber_id === barberFilter),
+    [data, barberFilter]
+  );
   const counts = useMemo(() => {
-    const c: Record<string, number> = { all: data.length };
-    for (const s of BOOKING_STATUSES) c[s] = data.filter((b: any) => b.status === s).length;
+    const c: Record<string, number> = { all: barberFiltered.length };
+    for (const s of BOOKING_STATUSES) c[s] = barberFiltered.filter((b: any) => b.status === s).length;
     return c;
-  }, [data]);
+  }, [barberFiltered]);
   // Per-customer stats from the loaded set (by customer_id)
   const customerStats = useMemo(() => {
     const m: Record<string, { total: number; cancelled: number; no_show: number; confirmed: number }> = {};
@@ -714,7 +719,7 @@ function BookingsTab() {
     return m;
   }, [data]);
   const q = search.trim().toLowerCase();
-  const filtered = (data as any[])
+  const filtered = barberFiltered
     .filter((b) => filter === "all" || b.status === filter)
     .filter((b) => !q || (b.customers?.name ?? "").toLowerCase().includes(q) || (b.customers?.phone ?? "").toLowerCase().includes(q));
   const todayStr = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
@@ -743,7 +748,7 @@ function BookingsTab() {
     const date = new Date(b.starts_at).toLocaleDateString("ar-IQ");
     const barberName = b.barbers?.name_ar ?? b.barbers?.name_en;
     const serviceName = b.services?.name_ar ?? b.services?.name_en;
-    return `أهلاً ${b.customers?.name}\n\nنرحب بك في *${SITE.nameAr}*\n\n*تم تأكيد حجزك بنجاح*\n\nالتاريخ: ${date}\nالوقت: ${time}\nالحلاق: ${barberName}\nالخدمة: ${serviceName}\nالسعر: ${formatIQD(b.price_iqd, "ar")}\n\nموقعنا على الخريطة:\n${SITE.mapsUrl}\n\nنراك قريباً!`;
+    return `أهلاً ${b.customers?.name}\n\nنرحب بك في *${SITE.nameAr}*\n\n*تم تأكيد حجزك بنجاح*\n\nالتاريخ: ${date}\nالوقت: ${time}\nالحلاق: ${barberName}\nالخدمة: ${serviceName}\nالسعر: ${formatIQD(b.price_iqd, "ar")}\n\nموقعنا على الخريطة:\n${SITE.mapsUrl}\n\n📍 المكان: عمارة V60 الطابق الثاني\n\nنراك قريباً!`;
   };
   const confirmAndNotify = async (b: any) => {
     await sb.from("bookings").update({ status: "confirmed" }).eq("id", b.id);
@@ -1050,6 +1055,40 @@ function BookingsTab() {
             );
           })}
         </div>
+      </div>
+
+      {/* Barber filter strip */}
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <button
+          onClick={() => setBarberFilter("all")}
+          className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs uppercase tracking-widest transition-colors ${
+            barberFilter === "all" ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-foreground"
+          }`}
+        >
+          {lang === "ar" ? "الكل" : "All Barbers"}
+          <span className="rounded-full bg-primary/20 px-1.5 py-0.5 text-[10px] font-semibold">{(data as any[]).length}</span>
+        </button>
+        {(allBarbers as any[]).map((b: any) => {
+          const count = (data as any[]).filter((bk: any) => bk.barber_id === b.id).length;
+          const isActive = barberFilter === b.id;
+          return (
+            <button
+              key={b.id}
+              onClick={() => setBarberFilter(b.id)}
+              className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-xs uppercase tracking-widest transition-colors ${
+                isActive ? "border-primary bg-primary text-primary-foreground" : "border-border hover:border-foreground"
+              }`}
+            >
+              {b.photo_url && (
+                <img src={b.photo_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+              )}
+              {lang === "ar" ? b.name_ar : b.name_en}
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
+                isActive ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"
+              }`}>{count}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-2">
