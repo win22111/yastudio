@@ -163,6 +163,34 @@ function Booking() {
     }
     setSubmitting(true);
     try {
+      // Double check in DB to prevent any bypass or race conditions
+      const db = supabase as any;
+      const { data: blockedCheck, error: blockErr } = await db
+        .from("blocked_days")
+        .select("id")
+        .eq("date", date)
+        .or(`barber_id.is.null,barber_id.eq.${barberId}`);
+
+      if (blockErr) throw blockErr;
+      if (blockedCheck && blockedCheck.length > 0) {
+        throw new Error(lang === "ar" ? "عذراً، هذا اليوم مغلق للحجوزات." : "Sorry, this day is closed for bookings.");
+      }
+
+      // Double check for double booking/overlap in DB
+      const { data: slotConflict, error: conflictErr } = await supabase
+        .from("bookings")
+        .select("id")
+        .eq("barber_id", barberId)
+        .neq("status", "cancelled")
+        .neq("status", "no_show")
+        .lt("starts_at", currentSlot.endsAt.toISOString())
+        .gt("ends_at", currentSlot.startsAt.toISOString());
+
+      if (conflictErr) throw conflictErr;
+      if (slotConflict && slotConflict.length > 0) {
+        throw new Error(lang === "ar" ? "عذراً، هذا الموعد تم حجزه للتو من قبل شخص آخر." : "Sorry, this time slot has just been booked by someone else.");
+      }
+
       // upsert customer via security-definer RPC (no public read on customers)
       const { data: customerId, error: custErr } = await supabase.rpc("upsert_customer_by_phone", {
         _name: name,
