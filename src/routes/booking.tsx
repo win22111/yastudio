@@ -89,6 +89,7 @@ function Booking() {
   const { data: services = [] } = useQuery({
     queryKey: ["services"],
     queryFn: async () => (await supabase.from("services").select("*").eq("active", true).order("sort_order")).data ?? [],
+    staleTime: 10 * 60 * 1000, // Services rarely change
   });
   const { data: barbers = [] } = useQuery({
     queryKey: ["barbers"],
@@ -100,10 +101,12 @@ function Booking() {
           .eq("active", true)
           .order("sort_order")
       ).data ?? [],
+    staleTime: 10 * 60 * 1000, // Barbers list rarely changes
   });
   const { data: prices = [] } = useQuery({
     queryKey: ["barber-services"],
     queryFn: async () => (await supabase.from("barber_services").select("*")).data ?? [],
+    staleTime: 10 * 60 * 1000, // Prices rarely change
   });
   const { data: bookings = [], refetch: refetchBookings } = useQuery({
     queryKey: ["bookings", date],
@@ -117,6 +120,7 @@ function Booking() {
         .lte("starts_at", end);
       return data ?? [];
     },
+    staleTime: 60 * 1000, // Bookings: 1 minute cache (time-sensitive)
   });
   const { data: blockedDaysData = [] } = useQuery({
     queryKey: ["blocked-days", date, barberId],
@@ -137,6 +141,7 @@ function Booking() {
       const { data } = await q;
       return data ?? [];
     },
+    staleTime: 5 * 60 * 1000, // Blocked days: 5 minute cache
   });
   // Full-shop block (no barber_id) disables all slots
   const isShopDayBlocked = (blockedDaysData as any[]).some((d: any) => !d.barber_id);

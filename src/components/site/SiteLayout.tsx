@@ -19,6 +19,9 @@ function AnnouncementBanner() {
         .maybeSingle();
       return data;
     },
+    // Announcements change rarely — cache for 10 minutes
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   if (!data) return null;
   const msg = lang === "ar" ? data.message_ar : data.message_en;
