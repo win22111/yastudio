@@ -140,6 +140,8 @@ function ReviewsTab() {
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-reviews"],
     queryFn: async () => (await sb.from("reviews").select("*, barbers(name_en)").order("created_at", { ascending: false })).data ?? [],
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
   return (
     <div>
@@ -175,6 +177,8 @@ function BarbersTab() {
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-barbers"],
     queryFn: async () => (await sb.from("barbers").select("*").order("sort_order")).data ?? [],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const editing = data.find((b: any) => b.id === editId) ?? null;
 
@@ -462,6 +466,8 @@ function AnnouncementsTab() {
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-announcements"],
     queryFn: async () => (await sb.from("announcements").select("*").order("created_at", { ascending: false })).data ?? [],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const publish = async () => {
     if (!f.message_en || !f.message_ar) return toast.error("Both messages required");
@@ -509,6 +515,8 @@ function PortfolioTab() {
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-portfolio"],
     queryFn: async () => (await sb.from("portfolio_items").select("*").order("sort_order", { ascending: false })).data ?? [],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const upload = async () => {
     if (!file) return toast.error("Pick a file");
@@ -562,6 +570,8 @@ function ServicesTab() {
   const { data: services = [], refetch: rs } = useQuery({
     queryKey: ["admin-services"],
     queryFn: async () => (await sb.from("services").select("*").order("sort_order")).data ?? [],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const [sf, setSf] = useState({ name_ar: "", name_en: "", price: "", duration_minutes: "60" });
 
@@ -691,14 +701,20 @@ function BookingsTab() {
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-bookings"],
     queryFn: async () => (await sb.from("bookings").select("*, customers(*), barbers(*), services(*)").order("starts_at", { ascending: false }).limit(200)).data ?? [],
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
   const { data: blockedDays = [], refetch: refetchBlocked } = useQuery({
     queryKey: ["admin-blocked-days"],
     queryFn: async () => (await sb.from("blocked_days").select("*, barbers(name_en, name_ar)").order("date", { ascending: true })).data ?? [],
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
   const { data: allBarbers = [] } = useQuery({
     queryKey: ["admin-all-barbers"],
     queryFn: async () => (await sb.from("barbers").select("id, name_en, name_ar").eq("active", true).order("sort_order")).data ?? [],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const barberFiltered = useMemo(
     () => barberFilter === "all" ? (data as any[]) : (data as any[]).filter((b) => b.barber_id === barberFilter),
@@ -1353,10 +1369,14 @@ function StoreTab() {
   const { data: products = [], refetch: rp } = useQuery({
     queryKey: ["admin-products"],
     queryFn: async () => (await sb.from("products").select("*").order("created_at", { ascending: false })).data ?? [],
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
   const { data: cats = [], refetch: rc } = useQuery({
     queryKey: ["admin-product-cats"],
     queryFn: async () => (await sb.from("categories").select("*").order("sort_order")).data ?? [],
+    staleTime: 10 * 60 * 1000,
+    gcTime: 30 * 60 * 1000,
   });
   const editing = products.find((p: any) => p.id === editId) ?? null;
   const [cf, setCf] = useState({ name_en: "", name_ar: "" });
@@ -1654,6 +1674,8 @@ function OrdersTab() {
   const { data = [], refetch } = useQuery({
     queryKey: ["admin-orders"],
     queryFn: async () => (await sb.from("orders").select("*, order_items(*)").order("created_at", { ascending: false })).data ?? [],
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
   });
   const counts = useMemo(() => {
     const c: Record<string, number> = { all: data.length };
