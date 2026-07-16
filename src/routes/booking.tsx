@@ -84,6 +84,7 @@ function Booking() {
   const [phone, setPhone] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [checking, setChecking] = useState(false);
   const [done, setDone] = useState(false);
 
   const { data: services = [] } = useQuery({
@@ -120,29 +121,36 @@ function Booking() {
         .lte("starts_at", end);
       return data ?? [];
     },
-    staleTime: 60 * 1000, // Bookings: 1 minute cache (time-sensitive)
+    staleTime: 3 * 60 * 1000, // Bookings: 3 minute cache (time-sensitive but not polling)
   });
-  const { data: blockedDaysData = [] } = useQuery({
-    queryKey: ["blocked-days", date, barberId],
+  // Fetch ALL blocked days for the next 30 days at once — filtered client-side.
+  // This prevents a new Supabase request on every date/barber change.
+  const { data: allBlockedDays = [] } = useQuery({
+    queryKey: ["blocked-days-range"],
     queryFn: async () => {
-      // Cast to any — blocked_days exists in DB but the generated types file is outdated
       const db = supabase as any;
-      // Fetch any blocked_days rows matching this date, either full-shop (barber_id IS NULL) or this barber
-      let q = db.from("blocked_days").select("date, barber_id").eq("date", date);
-      if (barberId) {
-        q = db
-          .from("blocked_days")
-          .select("date, barber_id")
-          .eq("date", date)
-          .or(`barber_id.is.null,barber_id.eq.${barberId}`);
-      } else {
-        q = db.from("blocked_days").select("date, barber_id").eq("date", date).is("barber_id", null);
-      }
-      const { data } = await q;
-      return data ?? [];
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const from = today.toISOString().slice(0, 10);
+      const to = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000)
+        .toISOString()
+        .slice(0, 10);
+      const { data } = await db
+        .from("blocked_days")
+        .select("date, barber_id")
+        .gte("date", from)
+        .lte("date", to);
+      return (data ?? []) as { date: string; barber_id: string | null }[];
     },
-    staleTime: 5 * 60 * 1000, // Blocked days: 5 minute cache
+    staleTime: 5 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
+  // Filter client-side for the selected date & barber
+  const blockedDaysData = allBlockedDays.filter(
+    (d) =>
+      d.date === date &&
+      (d.barber_id === null || d.barber_id === barberId),
+  );
   // Full-shop block (no barber_id) disables all slots
   const isShopDayBlocked = (blockedDaysData as any[]).some((d: any) => !d.barber_id);
   // Barber-specific block — only relevant after barber is chosen
@@ -168,16 +176,11 @@ function Booking() {
     }
     setSubmitting(true);
     try {
-      // Double check in DB to prevent any bypass or race conditions
-      const db = supabase as any;
-      const { data: blockedCheck, error: blockErr } = await db
-        .from("blocked_days")
-        .select("id")
-        .eq("date", date)
-        .or(`barber_id.is.null,barber_id.eq.${barberId}`);
-
-      if (blockErr) throw blockErr;
-      if (blockedCheck && blockedCheck.length > 0) {
+      // Fast client-side check using cached data (avoid extra API call for common case)
+      const cachedBlocked = allBlockedDays.filter(
+        (d) => d.date === date && (d.barber_id === null || d.barber_id === barberId),
+      );
+      if (cachedBlocked.length > 0) {
         throw new Error(lang === "ar" ? "عذراً، هذا اليوم مغلق للحجوزات." : "Sorry, this day is closed for bookings.");
       }
 
@@ -397,18 +400,57 @@ function Booking() {
         <div className="mt-8 flex justify-between">
           <button
             onClick={() => setStep(step - 1)}
-            disabled={step === 1}
+            disabled={step === 1 || checking}
             className="inline-flex items-center gap-1 border border-border px-6 py-3 text-sm uppercase tracking-widest disabled:opacity-30"
           >
             <ChevronLeft className="h-4 w-4" /> {dict.booking.back[lang]}
           </button>
           {step < 4 ? (
             <button
-              onClick={() => setStep(step + 1)}
-              disabled={(step === 1 && !serviceId) || (step === 2 && !barberId) || (step === 3 && (slotIdx === null || isDayBlocked))}
+              onClick={async () => {
+                // Step 3 → 4: verify slot is still free directly in DB
+                if (step === 3 && slotIdx !== null && barberId && currentSlot) {
+                  setChecking(true);
+                  try {
+                    const { data: conflict } = await supabase
+                      .from("bookings")
+                      .select("id")
+                      .eq("barber_id", barberId)
+                      .neq("status", "cancelled")
+                      .neq("status", "no_show")
+                      .lt("starts_at", currentSlot.endsAt.toISOString())
+                      .gt("ends_at", currentSlot.startsAt.toISOString());
+
+                    if (conflict && conflict.length > 0) {
+                      // Slot was taken — refresh cache and block navigation
+                      await refetchBookings();
+                      setSlotIdx(null);
+                      toast.error(
+                        lang === "ar"
+                          ? "⚠️ هذا الموعد تم حجزه للتو، يرجى اختيار وقت آخر."
+                          : "⚠️ This slot was just booked. Please choose another time.",
+                      );
+                      return; // ← لا ينتقل للخطوة 4
+                    }
+                  } catch {
+                    // On network error, allow proceeding — submit will catch it
+                  } finally {
+                    setChecking(false);
+                  }
+                }
+                setStep(step + 1);
+              }}
+              disabled={
+                checking ||
+                (step === 1 && !serviceId) ||
+                (step === 2 && !barberId) ||
+                (step === 3 && (slotIdx === null || isDayBlocked))
+              }
               className="inline-flex items-center gap-1 bg-primary px-6 py-3 text-sm uppercase tracking-widest text-primary-foreground disabled:opacity-30"
             >
-              {dict.booking.next[lang]} <ChevronRight className="h-4 w-4" />
+              {checking
+                ? (lang === "ar" ? "جاري التحقق…" : "Checking…")
+                : <>{dict.booking.next[lang]} <ChevronRight className="h-4 w-4" /></>}
             </button>
           ) : (
             <button

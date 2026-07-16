@@ -44,7 +44,6 @@ export function SiteLayout({
 }) {
   return (
     <div className="flex min-h-screen flex-col bg-background text-foreground">
-      <link rel="manifest" href="/manifest.webmanifest" />
       <AnnouncementBanner />
       <Navbar transparent={isHome} />
       <main className="flex-1">{children}</main>

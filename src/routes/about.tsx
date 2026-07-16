@@ -35,10 +35,15 @@ function About() {
           .eq("active", true)
           .order("sort_order")
       ).data ?? [],
+    staleTime: 10 * 60 * 1000, // Barbers rarely change
+    gcTime: 30 * 60 * 1000,
   });
   const { data: reviews = [], refetch } = useQuery({
     queryKey: ["reviews"],
-    queryFn: async () => (await supabase.from("reviews").select("*").eq("approved", true)).data ?? [],
+    queryFn: async () =>
+      (await supabase.from("reviews").select("*").eq("approved", true)).data ?? [],
+    staleTime: 5 * 60 * 1000,  // Reviews: 5 minute cache
+    gcTime: 15 * 60 * 1000,
   });
 
   const statsFor = (barberId: string) => {

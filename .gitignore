@@ -23,6 +23,12 @@ dist-ssr
 .wrangler/
 .dev.vars
 
+# Vercel build output (managed by Vercel CI — not committed)
+.vercel/output/
+
+# Supabase temp
+supabase/.temp/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
