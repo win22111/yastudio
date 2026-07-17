@@ -10,7 +10,7 @@
  */
 export function convertToWebP(
   file: File,
-  quality = 0.82,
+  quality = 0.75,
   maxWidth = 1600,
 ): Promise<File> {
   return new Promise((resolve) => {
@@ -49,12 +49,35 @@ export function convertToWebP(
 
         ctx.drawImage(img, 0, 0, width, height);
 
-        canvas.toBlob(
-          (blob) => {
+        // Helper to get blob with a specific quality
+        const getBlobForQuality = (q: number): Promise<Blob | null> => {
+          return new Promise((resBlob) => {
+            canvas.toBlob((blob) => resBlob(blob), "image/webp", q);
+          });
+        };
+
+        const processBlob = async () => {
+          try {
+            let blob = await getBlobForQuality(quality);
             if (!blob) {
               resolve(file);
               return;
             }
+
+            // If the WebP is larger than the original file, try a lower quality (0.60)
+            if (blob.size >= file.size && quality > 0.60) {
+              const lowerQualityBlob = await getBlobForQuality(0.60);
+              if (lowerQualityBlob && lowerQualityBlob.size < blob.size) {
+                blob = lowerQualityBlob;
+              }
+            }
+
+            // If it's still larger than the original file, fall back to the original file
+            if (blob.size >= file.size) {
+              resolve(file);
+              return;
+            }
+
             // Rename file extension to .webp
             const baseName =
               file.name.includes(".")
@@ -65,10 +88,12 @@ export function convertToWebP(
               lastModified: Date.now(),
             });
             resolve(webpFile);
-          },
-          "image/webp",
-          quality,
-        );
+          } catch (err) {
+            resolve(file);
+          }
+        };
+
+        processBlob();
       };
 
       img.src = e.target?.result as string;
