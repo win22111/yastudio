@@ -769,7 +769,7 @@ function BookingsTab() {
     const date = new Date(b.starts_at).toLocaleDateString("ar-IQ");
     const barberName = b.barbers?.name_ar ?? b.barbers?.name_en;
     const serviceName = b.services?.name_ar ?? b.services?.name_en;
-    return `أهلاً ${b.customers?.name}\n\nنرحب بك في *${SITE.nameAr}*\n\n*تم تأكيد حجزك بنجاح*\n\nالتاريخ: ${date}\nالوقت: ${time}\nالحلاق: ${barberName}\nالخدمة: ${serviceName}\nالسعر: ${formatIQD(b.price_iqd, "ar")}\n\nموقعنا على الخريطة:\n${SITE.mapsUrl}\n\n📍 المكان: عمارة V60 الطابق الثاني\n\nنراك قريباً!`;
+    return `أهلاً ${b.customers?.name}\n\nنرحب بك في *${SITE.nameAr}*\n\n*تم تأكيد حجزك بنجاح*\n\nالتاريخ: ${date}\nالوقت: ${time}\nالحلاق: ${barberName}\nالخدمة: ${serviceName}\nالسعر: ${formatIQD(b.price_iqd, "ar")}\n\nموقعنا على الخريطة:\n${SITE.mapsUrl}\n\n📍 المكان: بناية V60 الطابق الثاني\n\nنراك قريباً!`;
   };
   const confirmAndNotify = async (b: any) => {
     await sb.from("bookings").update({ status: "confirmed" }).eq("id", b.id);
