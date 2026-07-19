@@ -6,6 +6,7 @@ import { SiteLayout } from "@/components/site/SiteLayout";
 import { useI18n } from "@/hooks/use-i18n";
 import { dict } from "@/lib/translations";
 import { SITE } from "@/lib/site-config";
+import { getMediaUrl } from "@/lib/image-utils";
 
 export const Route = createFileRoute("/portfolio")({
   head: () => ({
@@ -26,6 +27,8 @@ function Portfolio() {
   const { data: items = [] } = useQuery({
     queryKey: ["portfolio"],
     queryFn: async () => (await supabase.from("portfolio_items").select("*").order("sort_order")).data ?? [],
+    staleTime: 15 * 60 * 1000, // Portfolio items rarely change
+    gcTime: 60 * 60 * 1000,
   });
   const filtered = filter === "all" ? items : items.filter((i) => i.type === filter);
   return (
@@ -47,9 +50,9 @@ function Portfolio() {
           {filtered.map((p) => (
             <div key={p.id} className="aspect-square overflow-hidden bg-card">
               {p.type === "video" ? (
-                <video src={p.url} autoPlay muted loop playsInline className="h-full w-full object-cover" />
+                <video src={getMediaUrl(p.url)} autoPlay muted loop playsInline className="h-full w-full object-cover" />
               ) : (
-                <img src={p.url} alt={p.title_en ?? ""} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 hover:scale-105" />
+                <img src={getMediaUrl(p.url)} alt={p.title_en ?? ""} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 hover:scale-105" />
               )}
             </div>
           ))}

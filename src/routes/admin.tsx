@@ -8,7 +8,7 @@ import { dict } from "@/lib/translations";
 import { formatIQD, openWaLink, SITE, waLink } from "@/lib/site-config";
 import { generateSlots } from "@/lib/booking";
 import { toast } from "sonner";
-import { convertToWebP } from "@/lib/image-utils";
+import { convertToWebP, getMediaUrl } from "@/lib/image-utils";
 import type { User } from "@supabase/supabase-js";
 import {
   MessageSquare, Users, Megaphone, Image as ImageIcon, Layers,
@@ -199,7 +199,7 @@ function BarbersTab() {
         {data.map((b: any) => (
           <div key={b.id} className="rounded border border-border bg-card/40 p-4">
             <div className="flex items-start justify-between gap-3">
-              <div className="h-14 w-14 overflow-hidden rounded-full bg-muted">{b.photo_url && <img src={b.photo_url} className="h-full w-full object-cover" />}</div>
+              <div className="h-14 w-14 overflow-hidden rounded-full bg-muted">{b.photo_url && <img src={getMediaUrl(b.photo_url)} className="h-full w-full object-cover" />}</div>
               <div className="text-end">
                 <div className="font-display text-lg">{b.name_en}</div>
                 <div className="text-xs text-muted-foreground">{b.role_en ?? "Barber"}{b.years ? ` · ${b.years}y` : ""}</div>
@@ -399,7 +399,7 @@ function BarberForm({ initial, onCancel, onSaved }: { initial: any; onCancel: ()
             <span>{uploading ? "Uploading…" : (f.photo_url ? "Replace photo" : "Upload barber photo")}</span>
             <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadPhoto(file); }} />
           </label>
-          {f.photo_url && <img src={f.photo_url} alt="" className="mt-2 h-20 w-20 rounded-full object-cover" />}
+          {f.photo_url && <img src={getMediaUrl(f.photo_url)} alt="" className="mt-2 h-20 w-20 rounded-full object-cover" />}
         </div>
       </div>
       {initial && <BarberServicePrices barberId={initial.id} />}
@@ -552,7 +552,7 @@ function PortfolioTab() {
       <div className="mt-4 grid grid-cols-2 gap-3 md:grid-cols-4">
         {data.map((p: any) => (
           <div key={p.id} className="group relative overflow-hidden rounded border border-border bg-muted">
-            {p.type === "video" ? <video src={p.url} className="aspect-[3/4] w-full object-cover" /> : <img src={p.url} className="aspect-[3/4] w-full object-cover" />}
+            {p.type === "video" ? <video src={getMediaUrl(p.url)} className="aspect-[3/4] w-full object-cover" /> : <img src={getMediaUrl(p.url)} className="aspect-[3/4] w-full object-cover" />}
             {p.title_en && <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent p-2 text-xs text-white">{p.title_en}</div>}
             <button onClick={async () => { await sb.from("portfolio_items").delete().eq("id", p.id); refetch(); }} className="absolute right-2 top-2 inline-flex h-8 w-8 items-center justify-center rounded bg-background/80 text-destructive opacity-0 transition group-hover:opacity-100">
               <Trash2 className="h-4 w-4" />
@@ -1101,7 +1101,7 @@ function BookingsTab() {
               }`}
             >
               {b.photo_url && (
-                <img src={b.photo_url} alt="" className="h-5 w-5 rounded-full object-cover" />
+                <img src={getMediaUrl(b.photo_url)} alt="" className="h-5 w-5 rounded-full object-cover" />
               )}
               {lang === "ar" ? b.name_ar : b.name_en}
               <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${
@@ -1398,7 +1398,7 @@ function StoreTab() {
             <div key={p.id} className="rounded border border-border bg-card/40 p-4">
               <div className="flex items-start gap-3">
                 <div className="h-20 w-20 flex-none overflow-hidden rounded bg-muted">
-                  {p.image_url && <img src={p.image_url} className="h-full w-full object-cover" />}
+                  {p.image_url && <img src={getMediaUrl(p.image_url)} className="h-full w-full object-cover" />}
                 </div>
                 <div className="flex-1 text-end">
                   <div className="font-display">{p.name_en}</div>
@@ -1614,7 +1614,7 @@ function ProductForm({ initial, cats, onCancel, onSaved }: { initial: any; cats:
             <span>{uploading ? "Uploading…" : (f.image_url ? "Replace product image" : "Upload product image")}</span>
             <input type="file" accept="image/*" className="hidden" onChange={(e) => { const file = e.target.files?.[0]; if (file) uploadImage(file); }} />
           </label>
-          {f.image_url && <img src={f.image_url} alt="" className="mt-2 h-24 w-24 rounded object-cover" />}
+          {f.image_url && <img src={getMediaUrl(f.image_url)} alt="" className="mt-2 h-24 w-24 rounded object-cover" />}
         </div>
         <input className="border border-border bg-background p-2 text-sm" placeholder="Colors — optional (e.g. Black, White)" value={f.colors} onChange={(e) => set("colors", e.target.value)} />
         <input className="border border-border bg-background p-2 text-sm" placeholder="Sizes — optional (e.g. S, M, L)" value={f.sizes} onChange={(e) => set("sizes", e.target.value)} />
@@ -1829,6 +1829,8 @@ function EarningsTab() {
         .eq("status", "paid")
         .order("starts_at", { ascending: false })
       ).data ?? [],
+    staleTime: 10 * 60 * 1000, // invalidateQueries() handles freshness on writes
+    gcTime: 30 * 60 * 1000,
   });
 
   // Fetch all completed orders
@@ -1841,6 +1843,8 @@ function EarningsTab() {
         .eq("status", "completed")
         .order("created_at", { ascending: false })
       ).data ?? [],
+    staleTime: 10 * 60 * 1000, // invalidateQueries() handles freshness on writes
+    gcTime: 30 * 60 * 1000,
   });
 
   // Month navigation helpers

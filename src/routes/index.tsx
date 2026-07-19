@@ -12,6 +12,7 @@ import heroVideo from "@/assets/hero-video.mp4";
 import { ChevronRight, Scissors, Calendar, User2, Check } from "lucide-react";
 import yasLogoWhite from "@/assets/yas-logo-white.png";
 import aboutImg from "@/assets/about.jpg";
+import { getMediaUrl } from "@/lib/image-utils";
 
 export const Route = createFileRoute("/")({
   head: () => ({
@@ -163,9 +164,9 @@ function Home() {
             {(portfolio ?? []).map((p) => (
               <div key={p.id} className="aspect-square overflow-hidden bg-card">
                 {p.type === "video" ? (
-                  <video src={p.url} muted loop autoPlay playsInline className="h-full w-full object-cover" />
+                  <video src={getMediaUrl(p.url)} muted loop autoPlay playsInline className="h-full w-full object-cover" />
                 ) : (
-                  <img src={p.url} alt={p.title_en ?? ""} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 hover:scale-105" />
+                  <img src={getMediaUrl(p.url)} alt={p.title_en ?? ""} loading="lazy" className="h-full w-full object-cover transition-transform duration-700 hover:scale-105" />
                 )}
               </div>
             ))}
@@ -227,7 +228,7 @@ function Home() {
               <Link key={p.id} to="/shop" className="group block border border-border bg-card">
                 <div className="aspect-square overflow-hidden bg-muted">
                   {p.image_url ? (
-                    <img src={p.image_url} alt={lang === "ar" ? p.name_ar : p.name_en} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <img src={getMediaUrl(p.image_url)} alt={lang === "ar" ? p.name_ar : p.name_en} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   ) : (
                     <div className="flex h-full items-center justify-center text-muted-foreground">—</div>
                   )}

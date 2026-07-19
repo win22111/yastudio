@@ -102,3 +102,17 @@ export function convertToWebP(
     reader.readAsDataURL(file);
   });
 }
+
+/**
+ * Helper to proxy Supabase Storage URLs through our server-side caching CDN endpoint
+ * to completely eliminate Supabase Cached Storage Egress quota consumption.
+ */
+export function getMediaUrl(url: string | null | undefined): string {
+  if (!url) return "";
+  // Check if it's a Supabase storage URL (public access path)
+  if (url.includes("supabase.co/storage/v1/object/public/")) {
+    return `/api/media?url=${encodeURIComponent(url)}`;
+  }
+  return url;
+}
+

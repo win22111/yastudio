@@ -8,6 +8,7 @@ import { useCart } from "@/hooks/use-cart";
 import { dict } from "@/lib/translations";
 import { formatIQD, SITE } from "@/lib/site-config";
 import { toast } from "sonner";
+import { getMediaUrl } from "@/lib/image-utils";
 
 export const Route = createFileRoute("/shop")({
   head: () => ({
@@ -38,14 +39,20 @@ function Shop() {
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
     queryFn: async () => (await supabase.from("categories").select("*").order("sort_order")).data ?? [],
+    staleTime: 15 * 60 * 1000, // Categories rarely change
+    gcTime: 60 * 60 * 1000,
   });
   const { data: products = [] } = useQuery({
     queryKey: ["products"],
     queryFn: async () => (await supabase.from("products").select("*").eq("active", true).order("created_at", { ascending: false })).data ?? [],
+    staleTime: 10 * 60 * 1000, // Products change infrequently
+    gcTime: 30 * 60 * 1000,
   });
   const { data: variants = [] } = useQuery({
     queryKey: ["product-variants"],
     queryFn: async () => (await supabase.from("product_variants").select("*")).data ?? [],
+    staleTime: 10 * 60 * 1000, // Variants change infrequently
+    gcTime: 30 * 60 * 1000,
   });
 
   const filtered = categoryId ? products.filter((p) => p.category_id === categoryId) : products;
@@ -86,7 +93,7 @@ function Shop() {
               >
                 <div className="aspect-square overflow-hidden bg-muted">
                   {p.image_url ? (
-                    <img src={p.image_url} alt={lang === "ar" ? p.name_ar : p.name_en} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
+                    <img src={getMediaUrl(p.image_url)} alt={lang === "ar" ? p.name_ar : p.name_en} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-105" />
                   ) : (
                     <div className="flex h-full items-center justify-center text-muted-foreground">—</div>
                   )}
@@ -161,7 +168,7 @@ function ProductDialog({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 p-4" onClick={onClose}>
       <div className="grid max-h-[90vh] w-full max-w-3xl gap-0 overflow-auto border border-border bg-card md:grid-cols-2" onClick={(e) => e.stopPropagation()}>
         <div className="aspect-square bg-muted">
-          {product.image_url && <img src={product.image_url} alt="" className="h-full w-full object-cover" />}
+          {product.image_url && <img src={getMediaUrl(product.image_url)} alt="" className="h-full w-full object-cover" />}
         </div>
         <div className="p-6">
           <h3 className="font-display text-2xl uppercase tracking-wider">{lang === "ar" ? product.name_ar : product.name_en}</h3>

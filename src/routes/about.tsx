@@ -8,6 +8,7 @@ import { dict } from "@/lib/translations";
 import { SITE } from "@/lib/site-config";
 import { toast } from "sonner";
 import { Star } from "lucide-react";
+import { getMediaUrl } from "@/lib/image-utils";
 
 export const Route = createFileRoute("/about")({
   head: () => ({
@@ -68,7 +69,7 @@ function About() {
               return (
                 <div key={b.id} className="border border-border bg-background">
                   <div className="aspect-[3/4] overflow-hidden bg-muted">
-                    {b.photo_url && <img src={b.photo_url} alt={b.name_en} className="h-full w-full object-cover" />}
+                    {b.photo_url && <img src={getMediaUrl(b.photo_url)} alt={b.name_en} className="h-full w-full object-cover" />}
                   </div>
                   <div className="p-4">
                     <div className="font-display text-xl uppercase tracking-wider">{lang === "ar" ? b.name_ar : b.name_en}</div>

@@ -10,6 +10,7 @@ import { generateSlots, isSlotTaken, todayISO } from "@/lib/booking";
 import { toast } from "sonner";
 import { ChevronLeft, ChevronRight, Check } from "lucide-react";
 import type { Lang } from "@/lib/translations";
+import { getMediaUrl } from "@/lib/image-utils";
 
 const DAY_NAMES_EN = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const DAY_NAMES_AR = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
@@ -304,7 +305,7 @@ function Booking() {
                       className={`flex items-center gap-4 border p-4 text-start ${barberId === b.id ? "border-primary bg-card" : "border-border hover:border-muted-foreground"}`}
                     >
                       <div className="h-14 w-14 overflow-hidden rounded-full bg-muted">
-                        {b.photo_url && <img src={b.photo_url} alt={b.name_en} className="h-full w-full object-cover" />}
+                        {b.photo_url && <img src={getMediaUrl(b.photo_url)} alt={b.name_en} className="h-full w-full object-cover" />}
                       </div>
                       <div className="flex-1">
                         <div className="font-display text-lg">{lang === "ar" ? b.name_ar : b.name_en}</div>
