@@ -689,6 +689,7 @@ function BookingsTab() {
   const [filter, setFilter] = useState<string>("all");
   const [barberFilter, setBarberFilter] = useState<string>("all");
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [editing, setEditing] = useState<any | null>(null);
   const [blockPickDay, setBlockPickDay] = useState<string>("");
   const [blocking, setBlocking] = useState(false);
@@ -698,12 +699,66 @@ function BookingsTab() {
   const [barberBlockPickBarber, setBarberBlockPickBarber] = useState<string>("");
   const [barberBlocking, setBarberBlocking] = useState(false);
   const undoTimerRef = { current: null as ReturnType<typeof setTimeout> | null };
-  const { data = [], refetch } = useQuery({
-    queryKey: ["admin-bookings"],
-    queryFn: async () => (await sb.from("bookings").select("*, customers(*), barbers(*), services(*)").order("starts_at", { ascending: false }).limit(200)).data ?? [],
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(search);
+    }, 400);
+    return () => clearTimeout(handler);
+  }, [search]);
+
+  const { data = [], refetch: refetchBookings } = useQuery({
+    queryKey: ["admin-bookings", debouncedSearch],
+    queryFn: async () => {
+      let query = sb.from("bookings").select("*, customers(*), barbers(*), services(*)");
+      
+      const trimmed = debouncedSearch.trim();
+      if (trimmed) {
+        const { data: matchedCustomers } = await sb
+          .from("customers")
+          .select("id")
+          .or(`name.ilike.%${trimmed}%,phone.ilike.%${trimmed}%`);
+        
+        const customerIds = matchedCustomers?.map((c) => c.id) ?? [];
+        if (customerIds.length === 0) {
+          return [];
+        }
+        query = query.in("customer_id", customerIds);
+      }
+      
+      const { data: bookingsData } = await query
+        .order("starts_at", { ascending: false })
+        .limit(800);
+      return bookingsData ?? [];
+    },
     staleTime: 2 * 60 * 1000,
     gcTime: 10 * 60 * 1000,
   });
+
+  const { data: dbCounts, refetch: refetchCounts } = useQuery({
+    queryKey: ["admin-bookings-counts-db", barberFilter],
+    queryFn: async () => {
+      let query = sb.from("bookings").select("status");
+      if (barberFilter !== "all") {
+        query = query.eq("barber_id", barberFilter);
+      }
+      const { data: bookingsData } = await query;
+      const allRows = bookingsData ?? [];
+      const c: Record<string, number> = { all: allRows.length };
+      for (const s of BOOKING_STATUSES) {
+        c[s] = allRows.filter((b: any) => b.status === s).length;
+      }
+      return c;
+    },
+    staleTime: 2 * 60 * 1000,
+    gcTime: 10 * 60 * 1000,
+  });
+
+  const refetch = () => {
+    refetchBookings();
+    refetchCounts();
+  };
+
   const { data: blockedDays = [], refetch: refetchBlocked } = useQuery({
     queryKey: ["admin-blocked-days"],
     queryFn: async () => (await sb.from("blocked_days").select("*, barbers(name_en, name_ar)").order("date", { ascending: true })).data ?? [],
@@ -725,6 +780,10 @@ function BookingsTab() {
     for (const s of BOOKING_STATUSES) c[s] = barberFiltered.filter((b: any) => b.status === s).length;
     return c;
   }, [barberFiltered]);
+
+  const displayCounts = useMemo(() => {
+    return search.trim() ? counts : (dbCounts ?? counts);
+  }, [search, counts, dbCounts]);
   // Per-customer stats from the loaded set (by customer_id)
   const customerStats = useMemo(() => {
     const m: Record<string, { total: number; cancelled: number; no_show: number; confirmed: number }> = {};
@@ -770,6 +829,13 @@ function BookingsTab() {
     const barberName = b.barbers?.name_ar ?? b.barbers?.name_en;
     const serviceName = b.services?.name_ar ?? b.services?.name_en;
     return `أهلاً ${b.customers?.name}\n\nنرحب بك في *${SITE.nameAr}*\n\n*تم تأكيد حجزك بنجاح*\n\nالتاريخ: ${date}\nالوقت: ${time}\nالحلاق: ${barberName}\nالخدمة: ${serviceName}\nالسعر: ${formatIQD(b.price_iqd, "ar")}\n\nموقعنا على الخريطة:\n${SITE.mapsUrl}\n\n📍 المكان: بناية V60 الطابق الثاني\n\nنراك قريباً!`;
+  };
+  const buildFeedbackMsg = (b: any) => {
+    const barberNameEn = b.barbers?.name_en ?? b.barbers?.name_ar ?? "";
+    const serviceNameEn = b.services?.name_en ?? b.services?.name_ar ?? "";
+    const customerName = b.customers?.name || "";
+    
+    return `أهلاً ${customerName || "عزيزنا الزبون"}\n\nنأمل أن تكون قد استمتعت بخدمتك اليوم (${serviceNameEn}) مع الحلاق (${barberNameEn}) في صالون *YAS*.\n\nيسعدنا جداً معرفة رأيك في الخدمة التي تلقيتها لمساعدتنا في التطوير المستمر. كيف كانت تجربتك معنا؟\n\nشكراً لثقتك بنا ونأمل برؤيتك مجدداً!\n\nWe'd love to hear your feedback! Thank you!`;
   };
   const confirmAndNotify = async (b: any) => {
     await sb.from("bookings").update({ status: "confirmed" }).eq("id", b.id);
@@ -1123,7 +1189,7 @@ function BookingsTab() {
         <div className="flex flex-wrap items-center justify-end gap-2">
           {(["cancelled", "paid", "confirmed", "pending", "all"] as const).map((k) => (
             <button key={k} onClick={() => setFilter(k)} className={`rounded-full border px-4 py-1.5 text-xs uppercase tracking-widest ${filter === k ? "border-foreground bg-foreground text-background" : "border-border"}`}>
-              {labels[k][lang]} ({counts[k] ?? 0})
+              {labels[k][lang]} ({displayCounts[k] ?? 0})
             </button>
           ))}
         </div>
@@ -1183,6 +1249,7 @@ function BookingsTab() {
                       <button onClick={() => setStatus(b.id, "paid")} className="bg-emerald-600 px-2 py-1 text-xs font-medium text-white hover:bg-emerald-700">Done</button>
                       <button onClick={() => setStatus(b.id, "cancelled")} className="bg-amber-500 px-2 py-1 text-xs font-medium text-white hover:bg-amber-600">Cancel</button>
                       <button onClick={() => setStatus(b.id, "no_show", b.customer_id)} className="border border-destructive bg-destructive/10 px-2 py-1 text-xs text-destructive hover:bg-destructive/20">No-show</button>
+                      <button onClick={() => openWaLink(b.customers?.phone ?? "", buildFeedbackMsg(b))} className="bg-indigo-600 px-2 py-1 text-xs font-medium text-white hover:bg-indigo-700">{lang === "ar" ? "طلب رأي" : "Feedback"}</button>
                       <button onClick={() => setEditing({ ...b })} className="border border-border px-2 py-1 text-xs hover:bg-card">Edit</button>
                       <button onClick={() => deleteBooking(b.id)} className="border border-destructive px-2 py-1 text-xs text-destructive hover:bg-destructive/10">Delete</button>
                     </div>
